@@ -1,9 +1,10 @@
 # courtesy of https://github.com/sgrvinod/a-PyTorch-Tutorial-to-Super-Resolution
 
-import torch
-from torch import nn
-import torchvision
 import math
+
+import torch
+import torchvision
+from torch import nn
 from torch.nn import functional as F
 from torch.nn.utils import spectral_norm
 
@@ -35,10 +36,16 @@ def l2normalize(v, eps=1e-12):
 class ConvLeaky(nn.Module):
     def __init__(self, in_dim, out_dim):
         super(ConvLeaky, self).__init__()
-        self.conv1 = nn.Conv2d(in_channels=in_dim, out_channels=out_dim,
-                               kernel_size=3, stride=1, padding=1)
-        self.conv2 = nn.Conv2d(in_channels=out_dim, out_channels=out_dim,
-                               kernel_size=3, stride=1, padding=1)
+        self.conv1 = nn.Conv2d(
+            in_channels=in_dim, out_channels=out_dim, kernel_size=3, stride=1, padding=1
+        )
+        self.conv2 = nn.Conv2d(
+            in_channels=out_dim,
+            out_channels=out_dim,
+            kernel_size=3,
+            stride=1,
+            padding=1,
+        )
 
     def forward(self, input):
         out = self.conv1(input)
@@ -53,8 +60,18 @@ class ConvolutionalBlock(nn.Module):
     A convolutional block, comprising convolutional, BN, activation layers.
     """
 
-    def __init__(self, in_channels, out_channels, kernel_size, stride=1, batch_norm=False, activation=None, dilation=1,
-                 groups=1, use_spectral_norm=False):
+    def __init__(
+        self,
+        in_channels,
+        out_channels,
+        kernel_size,
+        stride=1,
+        batch_norm=False,
+        activation=None,
+        dilation=1,
+        groups=1,
+        use_spectral_norm=False,
+    ):
         """
         :param in_channels: number of input channels
         :param out_channels: number of output channe;s
@@ -68,7 +85,7 @@ class ConvolutionalBlock(nn.Module):
         #    groups = 1
         if activation is not None:
             activation = activation.lower()
-            assert activation in {'prelu', 'leakyrelu', 'tanh'}
+            assert activation in {"prelu", "leakyrelu", "tanh"}
 
         # A container that will hold the layers in this convolutional block
         layers = list()
@@ -76,24 +93,40 @@ class ConvolutionalBlock(nn.Module):
         # A convolutional layer
         if not use_spectral_norm:
             layers.append(
-                nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=kernel_size, stride=stride,
-                          padding=kernel_size // 2, groups=groups))
+                nn.Conv2d(
+                    in_channels=in_channels,
+                    out_channels=out_channels,
+                    kernel_size=kernel_size,
+                    stride=stride,
+                    padding=kernel_size // 2,
+                    groups=groups,
+                )
+            )
         else:
             layers.append(
-                spectral_norm(nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=kernel_size,
-                                        stride=stride,
-                                        padding=kernel_size // 2 + dilation // 2, groups=groups, dilation=1)))
+                spectral_norm(
+                    nn.Conv2d(
+                        in_channels=in_channels,
+                        out_channels=out_channels,
+                        kernel_size=kernel_size,
+                        stride=stride,
+                        padding=kernel_size // 2 + dilation // 2,
+                        groups=groups,
+                        dilation=1,
+                    )
+                )
+            )
 
         # A batch normalization (BN) layer, if wanted
         if batch_norm is True:
             layers.append(nn.BatchNorm2d(num_features=out_channels))
 
         # An activation layer, if wanted
-        if activation == 'prelu':
+        if activation == "prelu":
             layers.append(nn.PReLU())
-        elif activation == 'leakyrelu':
+        elif activation == "leakyrelu":
             layers.append(nn.LeakyReLU(0.2))
-        elif activation == 'tanh':
+        elif activation == "tanh":
             layers.append(nn.Tanh())
 
         # Put together the convolutional block as a sequence of the layers in this container
@@ -125,8 +158,12 @@ class SubPixelConvolutionalBlock(nn.Module):
         super(SubPixelConvolutionalBlock, self).__init__()
 
         # A convolutional layer that increases the number of channels by scaling factor^2, followed by pixel shuffle and PReLU
-        self.conv = nn.Conv2d(in_channels=n_channels, out_channels=n_channels * (scaling_factor ** 2),
-                              kernel_size=kernel_size, padding=kernel_size // 2)
+        self.conv = nn.Conv2d(
+            in_channels=n_channels,
+            out_channels=n_channels * (scaling_factor**2),
+            kernel_size=kernel_size,
+            padding=kernel_size // 2,
+        )
         # These additional channels are shuffled to form additional pixels, upscaling each dimension by the scaling factor
         self.pixel_shuffle = nn.PixelShuffle(upscale_factor=scaling_factor)
         self.prelu = nn.PReLU()
@@ -139,8 +176,12 @@ class SubPixelConvolutionalBlock(nn.Module):
         :return: scaled output images, a tensor of size (N, n_channels, w * scaling factor, h * scaling factor)
         """
         output = self.conv(input)  # (N, n_channels * scaling factor^2, w, h)
-        output = self.pixel_shuffle(output)  # (N, n_channels, w * scaling factor, h * scaling factor)
-        output = self.prelu(output)  # (N, n_channels, w * scaling factor, h * scaling factor)
+        output = self.pixel_shuffle(
+            output
+        )  # (N, n_channels, w * scaling factor, h * scaling factor)
+        output = self.prelu(
+            output
+        )  # (N, n_channels, w * scaling factor, h * scaling factor)
 
         return output
 
@@ -158,12 +199,22 @@ class ResidualBlock(nn.Module):
         super(ResidualBlock, self).__init__()
 
         # The first convolutional block
-        self.conv_block1 = ConvolutionalBlock(in_channels=n_channels, out_channels=n_channels, kernel_size=kernel_size,
-                                              batch_norm=True, activation='leakyrelu')
+        self.conv_block1 = ConvolutionalBlock(
+            in_channels=n_channels,
+            out_channels=n_channels,
+            kernel_size=kernel_size,
+            batch_norm=True,
+            activation="leakyrelu",
+        )
 
         # The second convolutional block
-        self.conv_block2 = ConvolutionalBlock(in_channels=n_channels, out_channels=n_channels, kernel_size=kernel_size,
-                                              batch_norm=True, activation=None)
+        self.conv_block2 = ConvolutionalBlock(
+            in_channels=n_channels,
+            out_channels=n_channels,
+            kernel_size=kernel_size,
+            batch_norm=True,
+            activation=None,
+        )
 
     def forward(self, input):
         """
@@ -185,8 +236,15 @@ class SRResNet(nn.Module):
     The SRResNet, as defined in the paper.
     """
 
-    def __init__(self, in_channels=3, large_kernel_size=9, small_kernel_size=3, n_channels=64, n_blocks=16,
-                 scaling_factor=2):
+    def __init__(
+        self,
+        in_channels=3,
+        large_kernel_size=9,
+        small_kernel_size=3,
+        n_channels=64,
+        n_blocks=16,
+        scaling_factor=2,
+    ):
         """
         :param large_kernel_size: kernel size of the first and last convolutions which transform the inputs and outputs
         :param small_kernel_size: kernel size of all convolutions in-between, i.e. those in the residual and subpixel convolutional blocks
@@ -201,18 +259,31 @@ class SRResNet(nn.Module):
         assert scaling_factor in {1, 2, 4, 8}, "The scaling factor must be 2, 4, or 8!"
         self.scale_factor = scaling_factor
         # The first convolutional block
-        self.conv_block1 = ConvolutionalBlock(in_channels=in_channels, out_channels=n_channels,
-                                              kernel_size=large_kernel_size,
-                                              batch_norm=False, activation='leakyrelu', stride=1)
+        self.conv_block1 = ConvolutionalBlock(
+            in_channels=in_channels,
+            out_channels=n_channels,
+            kernel_size=large_kernel_size,
+            batch_norm=False,
+            activation="leakyrelu",
+            stride=1,
+        )
 
         # A sequence of n_blocks residual blocks, each containing a skip-connection across the block
         self.residual_blocks = nn.Sequential(
-            *[ResidualBlock(kernel_size=small_kernel_size, n_channels=n_channels) for i in range(n_blocks)])
+            *[
+                ResidualBlock(kernel_size=small_kernel_size, n_channels=n_channels)
+                for i in range(n_blocks)
+            ]
+        )
 
         # Another convolutional block
-        self.conv_block2 = ConvolutionalBlock(in_channels=n_channels, out_channels=n_channels,
-                                              kernel_size=small_kernel_size,
-                                              batch_norm=False, activation='leakyrelu')
+        self.conv_block2 = ConvolutionalBlock(
+            in_channels=n_channels,
+            out_channels=n_channels,
+            kernel_size=small_kernel_size,
+            batch_norm=False,
+            activation="leakyrelu",
+        )
 
         # Upscaling is done by sub-pixel convolution, with each such block upscaling by a factor of 2
         n_subpixel_convolution_blocks = int(math.log2(scaling_factor))
@@ -223,12 +294,24 @@ class SRResNet(nn.Module):
         # )
 
         self.last_part = nn.Sequential(
-            *[SubPixelConvolutionalBlock(kernel_size=small_kernel_size, n_channels=n_channels, scaling_factor=2) for i
-              in range(n_subpixel_convolution_blocks)])
+            *[
+                SubPixelConvolutionalBlock(
+                    kernel_size=small_kernel_size,
+                    n_channels=n_channels,
+                    scaling_factor=2,
+                )
+                for i in range(n_subpixel_convolution_blocks)
+            ]
+        )
 
         # The last convolutional block
-        self.conv_block3 = ConvolutionalBlock(in_channels=n_channels, out_channels=3, kernel_size=large_kernel_size,
-                                              batch_norm=False, activation='Tanh')
+        self.conv_block3 = ConvolutionalBlock(
+            in_channels=n_channels,
+            out_channels=3,
+            kernel_size=large_kernel_size,
+            batch_norm=False,
+            activation="Tanh",
+        )
 
     def forward(self, lr_imgs):
         """
@@ -243,7 +326,9 @@ class SRResNet(nn.Module):
         output = self.conv_block2(output)  # (N, n_channels, w, h)
         output = output + residual  # (N, n_channels, w, h)
         self.hidden = output
-        sr_imgs = self.last_part(output)  # (N, n_channels, w * scaling factor, h * scaling factor)
+        sr_imgs = self.last_part(
+            output
+        )  # (N, n_channels, w * scaling factor, h * scaling factor)
         # sr_imgs = sr_imgs + F.interpolate(lr_imgs,
         #                                 scale_factor=self.scale_factor,
         #                                 mode='bilinear')
@@ -265,8 +350,16 @@ class Generator(nn.Module):
     The generator in the SRGAN, as defined in the paper. Architecture identical to the SRResNet.
     """
 
-    def __init__(self, in_channels=3, large_kernel_size=7, small_kernel_size=3, n_channels=64, n_blocks=8,
-                 scaling_factor=2, downsample=None):
+    def __init__(
+        self,
+        in_channels=3,
+        large_kernel_size=7,
+        small_kernel_size=3,
+        n_channels=64,
+        n_blocks=8,
+        scaling_factor=2,
+        downsample=None,
+    ):
         """
         :param large_kernel_size: kernel size of the first and last convolutions which transform the inputs and outputs
         :param small_kernel_size: kernel size of all convolutions in-between, i.e. those in the residual and subpixel convolutional blocks
@@ -277,12 +370,19 @@ class Generator(nn.Module):
         super(Generator, self).__init__()
 
         # The generator is simply an SRResNet, as above
-        self.net = SRResNet(in_channels=in_channels, large_kernel_size=large_kernel_size,
-                            small_kernel_size=small_kernel_size,
-                            n_channels=n_channels, n_blocks=n_blocks, scaling_factor=scaling_factor)
+        self.net = SRResNet(
+            in_channels=in_channels,
+            large_kernel_size=large_kernel_size,
+            small_kernel_size=small_kernel_size,
+            n_channels=n_channels,
+            n_blocks=n_blocks,
+            scaling_factor=scaling_factor,
+        )
 
         if downsample is not None and downsample != scaling_factor:
-            self.downsample = nn.Upsample(scale_factor=downsample, mode='bicubic', align_corners=True)
+            self.downsample = nn.Upsample(
+                scale_factor=downsample, mode="bicubic", align_corners=True
+            )
         else:
             self.downsample = nn.Identity()
 
@@ -292,7 +392,7 @@ class Generator(nn.Module):
 
         :param srresnet_checkpoint: checkpoint filepath
         """
-        srresnet = torch.load(srresnet_checkpoint)['model']
+        srresnet = torch.load(srresnet_checkpoint)["model"]
         self.net.load_state_dict(srresnet.state_dict())
 
         print("\nLoaded weights from pre-trained SRResNet.\n")
@@ -304,7 +404,9 @@ class Generator(nn.Module):
         :param lr_imgs: low-resolution input images, a tensor of size (N, 3, w, h)
         :return: super-resolution output images, a tensor of size (N, 3, w * scaling factor, h * scaling factor)
         """
-        sr_imgs = self.net(lr_imgs)  # (N, n_channels, w * scaling factor, h * scaling factor)
+        sr_imgs = self.net(
+            lr_imgs
+        )  # (N, n_channels, w * scaling factor, h * scaling factor)
 
         return self.downsample(sr_imgs)
 
@@ -331,11 +433,22 @@ class Discriminator(nn.Module):
         # The first convolutional block is unique because it does not employ batch normalization
         conv_blocks = list()
         for i in range(n_blocks):
-            out_channels = (n_channels if i is 0 else in_channels * 2) if i % 2 is 0 else in_channels
+            out_channels = (
+                (n_channels if i is 0 else in_channels * 2)
+                if i % 2 is 0
+                else in_channels
+            )
             conv_blocks.append(
-                ConvolutionalBlock(in_channels=in_channels, out_channels=out_channels, kernel_size=kernel_size,
-                                   stride=1 if i % 2 is 0 else 2, batch_norm=True, activation='LeakyReLu',
-                                   use_spectral_norm=False))
+                ConvolutionalBlock(
+                    in_channels=in_channels,
+                    out_channels=out_channels,
+                    kernel_size=kernel_size,
+                    stride=1 if i % 2 is 0 else 2,
+                    batch_norm=True,
+                    activation="LeakyReLu",
+                    use_spectral_norm=False,
+                )
+            )
             in_channels = out_channels
         self.conv_blocks = nn.Sequential(*conv_blocks)
 
@@ -405,11 +518,14 @@ class TruncatedVGG19(nn.Module):
                 break
 
         # Check if conditions were satisfied
-        assert maxpool_counter == i - 1 and conv_counter == j, "One or both of i=%d and j=%d are not valid choices for the VGG19!" % (
-            i, j)
+        assert (
+            maxpool_counter == i - 1 and conv_counter == j
+        ), "One or both of i=%d and j=%d are not valid choices for the VGG19!" % (i, j)
 
         # Truncate to the jth convolution (+ activation) before the ith maxpool layer
-        self.truncated_vgg19 = nn.Sequential(*list(vgg19.features.children())[:truncate_at + 1])
+        self.truncated_vgg19 = nn.Sequential(
+            *list(vgg19.features.children())[: truncate_at + 1]
+        )
 
     def forward(self, input):
         """
@@ -417,6 +533,8 @@ class TruncatedVGG19(nn.Module):
         :param input: high-resolution or super-resolution images, a tensor of size (N, 3, w * scaling factor, h * scaling factor)
         :return: the specified VGG19 feature map, a tensor of size (N, feature_map_channels, feature_map_w, feature_map_h)
         """
-        output = self.truncated_vgg19(input)  # (N, feature_map_channels, feature_map_w, feature_map_h)
+        output = self.truncated_vgg19(
+            input
+        )  # (N, feature_map_channels, feature_map_w, feature_map_h)
 
         return output

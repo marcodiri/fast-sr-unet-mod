@@ -8,3 +8,5 @@ generated/**
 *.webm
 *.pth
 *.idea
+lightning_logs/
+ds/
