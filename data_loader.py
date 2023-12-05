@@ -2,8 +2,10 @@ import os
 import random
 from io import BytesIO
 from os.path import join
+from pathlib import Path
 
 import lightning as L
+import numpy as np
 import torch
 import torchvision
 from lightning.pytorch.utilities.types import EVAL_DATALOADERS, TRAIN_DATALOADERS
@@ -12,9 +14,6 @@ from torch.utils.data import DataLoader, Dataset, random_split
 from torchvision.transforms import functional
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True
-
-train_dir = "Flickr2K"
-test_dir = "Flickr2K"
 
 
 def get_imlist(path, ext=".jpg"):
@@ -78,16 +77,8 @@ def _filter_bvidvc_path_by_res(path, target_res=1920):
     return False
 
 
-def _get_pics_in_subfolder(path, ext=".jpg"):
-    folders = []
-    for path, subdirs, files in os.walk(path):
-        files_list = []
-        for name in files:
-            if name.endswith(ext):
-                files_list += [os.path.join(path, name)]
-        if len(files) > 0:
-            folders += [(path, files_list)]
-    return folders
+def _get_pics_in_subfolder(path, ext="jpg"):
+    return list(Path(path).rglob(f"*.{ext}"))
 
 
 class ARDataset(Dataset):
@@ -134,26 +125,14 @@ class ARDataset(Dataset):
         self.rf = rescale_factor
 
         hq_dir = path + "/frames_HQ"
-        lq_dir = path + f"/frames_QF{crf}"
+        lq_dir = path + f"/frames/frames_CRF_{crf}"
 
-        self.hq_dir = sorted(
-            sum(
-                [
-                    files_list
-                    for _, files_list in _get_pics_in_subfolder(hq_dir, ext=".png")
-                ],
-                [],
-            )
-        )
-        self.lq_dir = sorted(
-            sum(
-                [
-                    files_list
-                    for _, files_list in _get_pics_in_subfolder(lq_dir, ext=".png")
-                ],
-                [],
-            )
-        )
+        self.hq_dir = sorted(_get_pics_in_subfolder(hq_dir, ext="png"))
+        self.lq_dir = sorted(_get_pics_in_subfolder(lq_dir, ext="png"))
+
+        assert not use_ar or len(self.hq_dir) == len(
+            self.lq_dir
+        ), "use_ar is True but num of lq images does not correspond to hq images"
 
         self.size = len(self.hq_dir)
 
@@ -164,9 +143,10 @@ class ARDataset(Dataset):
         # HQ version of the image
 
         hq = load_img(self.hq_dir[item])
-        lq = load_img(self.lq_dir[item])
 
-        w, h = lq.size
+        sf = self.upscale_factor
+
+        w, h = (np.array(hq.size) / sf).astype(int)
         if w > self.patch_size:
             w = w - self.patch_size
             w_pos = random.randint(0, w - 1)
@@ -179,8 +159,6 @@ class ARDataset(Dataset):
         else:
             h_pos = 0
 
-        sf = self.upscale_factor
-
         # left, upper, right, and lower
         crop_pos = (w_pos, h_pos, w_pos + self.patch_size, h_pos + self.patch_size)
         crop_pos_sr = (
@@ -190,10 +168,11 @@ class ARDataset(Dataset):
             sf * (h_pos + self.patch_size),
         )
         hq = hq.crop(crop_pos_sr)
-        if not self.ar:
-            lq = hq.resize((self.patch_size, self.patch_size))
-        else:
+        if self.ar:
+            lq = load_img(self.lq_dir[item])
             lq = lq.crop(crop_pos)
+        else:
+            lq = hq.resize((self.patch_size, self.patch_size))
 
         if self.rf is not None:
             hq = hq.resize(
@@ -262,7 +241,7 @@ class FolderDataModule(L.LightningDataModule):
             dataset=self.valid_set,
             batch_size=self.hparams.batch_size,
             num_workers=12,
-            shuffle=True,
+            shuffle=False,
             pin_memory=True,
         )
         return data_loader_eval
