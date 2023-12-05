@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "srunet"
+authors = [{ name = "Marco Di Rienzo" }]
+version = "0.0.1"
+requires-python = ">=3.10"
+dependencies = [
+    "torch",
+    "torchvision",
+    "lightning",
+    "lpips"
+]
+
+[tool.setuptools.packages]
+find = {}
