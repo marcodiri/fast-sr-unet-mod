@@ -125,11 +125,11 @@ class ARDataLoader2(data.Dataset):
         self.upscale_factor = dataset_upscale_factor
         self.rf = rescale_factor
 
-        hq_dir = path + "_HQ"
-        lq_dir = path + f"_QF{crf}"
+        hq_dir = path + "/frames_HQ"
+        lq_dir = path + f"/frames/frames_CRF_{crf}"
 
-        self.hq_dir = sorted(sum([files_list for _, files_list in _get_pics_in_subfolder(hq_dir)], []))
-        self.lq_dir = sorted(sum([files_list for _, files_list in _get_pics_in_subfolder(lq_dir)], []))
+        self.hq_dir = sorted(sum([files_list for _, files_list in _get_pics_in_subfolder(hq_dir, ".png")], []))
+        self.lq_dir = sorted(sum([files_list for _, files_list in _get_pics_in_subfolder(lq_dir, ".png")], []))
 
         # count = sum([len(directory) for _, directory in self.hq_dir])
         count = len(self.hq_dir)

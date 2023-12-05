@@ -59,8 +59,8 @@ if __name__ == '__main__':
     lpips_alex.to(device)
     critic.to(device)
 
-    dataset_train = dl.ARDataLoader2(path=str(args.DATASET_DIR), patch_size=96, eval=False, use_ar=True)
-    dataset_test = dl.ARDataLoader2(path=str(args.DATASET_DIR), patch_size=96, eval=True, use_ar=True)
+    dataset_train = dl.ARDataLoader2(path=str(args.DATASET_DIR), patch_size=96, crf=22, eval=False, use_ar=True)
+    dataset_test = dl.ARDataLoader2(path=str(args.DATASET_DIR), patch_size=96, crf=22, eval=True, use_ar=True)
 
     data_loader = DataLoader(dataset=dataset_train, batch_size=32, num_workers=12, shuffle=True,
                              pin_memory=True)
@@ -163,7 +163,7 @@ if __name__ == '__main__':
 
             print(f"Val SSIM: {ssim_mean}, Val LPIPS: {lpips_mean}")
             torch.save(model.state_dict(),
-                       args.EXPORT_DIR/'{0}_epoch{1}_ssim{2:.4f}_lpips{3:.4f}_crf{4}.pkl'.format(arch_name, e, ssim_mean, lpips_mean,
+                       args.EXPORT_DIR+'/{0}_epoch{1}_ssim{2:.4f}_lpips{3:.4f}_crf{4}.pkl'.format(arch_name, e, ssim_mean, lpips_mean,
                                                                                  args.CRF))
 
             # having critic's weights saved was not useful, better sparing storage!
