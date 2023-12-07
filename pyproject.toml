@@ -15,6 +15,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+wandb = ["wandb"]
 render = ["opencv-python", "av"]
 
 [tool.setuptools.packages.find]

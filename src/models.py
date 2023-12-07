@@ -578,6 +578,8 @@ class GANModule(L.LightningModule):
         self.ssim_validation.append(float(ssim_val))
         self.lpips_validation.append(float(lpips_val))
 
+        return x, y_true, y_fake
+
     def on_validation_epoch_end(self) -> None:
         ssim_mean = np.array(self.ssim_validation).mean()
         lpips_mean = np.array(self.lpips_validation).mean()
