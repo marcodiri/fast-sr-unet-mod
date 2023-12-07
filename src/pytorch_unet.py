@@ -1,19 +1,11 @@
 # the unet code is inspired from https://github.com/usuyama/pytorch-unet
 
-import math
 from builtins import super
-from typing import Any
 
-import lightning as L
-import lpips  # courtesy of https://github.com/richzhang/PerceptualSimilarity
-import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from lightning.pytorch.utilities.types import STEP_OUTPUT, OptimizerLRScheduler
 from torch.nn import functional as F
-
-import pytorch_ssim  # courtesy of https://github.com/Po-Hsun-Su/pytorch-ssim
 
 
 class SimpleResNet(nn.Module):
@@ -459,115 +451,3 @@ class SRUnet(nn.Module):
                 if hasattr(block, "conv_adapter"):
                     block.reparametrize_convs()
                     block.reparametrize_convs()
-
-
-class GANModule(L.LightningModule):
-    def __init__(
-        self,
-        generator,
-        discriminator,
-        lpips_loss_weight,
-        ssim_loss_weight,
-        bce_loss_weight,
-    ):
-        super().__init__()
-        self.save_hyperparameters(ignore=["generator", "discriminator"])
-        self.G = generator
-        self.D = discriminator
-
-        self.lpips_loss = lpips.LPIPS(net="vgg", version="0.1")
-        self.lpips_alex = lpips.LPIPS(net="alex", version="0.1")
-        self.ssim = pytorch_ssim.SSIM()
-        self.automatic_optimization = False
-
-        self.ssim_validation = []
-        self.lpips_validation = []
-
-    def training_step(self, batch, batch_idx) -> STEP_OUTPUT:
-        g_opt, d_opt = self.optimizers()
-
-        x, y_true = batch
-
-        y_fake = self.G(x)
-
-        # train critic phase
-        batch_dim = x.shape[0]
-
-        pred_true = self.D(y_true)
-
-        # forward pass on true
-        loss_true = F.binary_cross_entropy_with_logits(
-            pred_true, torch.ones_like(pred_true, device=self.device)
-        )
-
-        # then updates on fakes
-        pred_fake = self.D(y_fake.detach())
-        loss_fake = F.binary_cross_entropy_with_logits(
-            pred_fake, torch.zeros_like(pred_fake, device=self.device)
-        )
-
-        loss_discr = loss_true + loss_fake
-        loss_discr *= 0.5
-
-        d_opt.zero_grad()
-        self.manual_backward(loss_discr)
-        d_opt.step()
-
-        ## train generator phase
-
-        lpips_loss_ = self.lpips_loss(y_fake, y_true).mean()
-        ssim_loss = 1.0 - self.ssim(y_fake, y_true)
-        pred_fake = self.D(y_fake)
-        bce = F.binary_cross_entropy_with_logits(
-            pred_fake, torch.ones_like(pred_fake, device=self.device)
-        )
-        content_loss = (
-            self.hparams.lpips_loss_weight * lpips_loss_
-            + self.hparams.ssim_loss_weight * ssim_loss
-        )
-        loss_gen = content_loss + self.hparams.bce_loss_weight * bce
-
-        g_opt.zero_grad()
-        self.manual_backward(loss_gen)
-        g_opt.step()
-
-        self.log_dict(
-            {
-                "g_loss": loss_gen,
-                "d_loss": loss_discr,
-                "content_loss": content_loss,
-                "bce_loss": bce,
-            },
-            prog_bar=True,
-        )
-
-    def validation_step(self, batch, batch_idx) -> STEP_OUTPUT:
-        x, y_true = batch
-
-        y_fake = self.G(x)
-
-        ssim_val = self.ssim(y_fake, y_true).mean()
-        lpips_val = self.lpips_alex(y_fake, y_true).mean()
-        self.ssim_validation.append(float(ssim_val))
-        self.lpips_validation.append(float(lpips_val))
-
-    def on_validation_epoch_end(self) -> None:
-        ssim_mean = np.array(self.ssim_validation).mean()
-        lpips_mean = np.array(self.lpips_validation).mean()
-
-        self.log_dict(
-            {
-                "val_ssim": ssim_mean,
-                "val_lpips": lpips_mean,
-            },
-            prog_bar=True,
-        )
-
-        self.ssim_validation.clear()
-        self.lpips_validation.clear()
-
-    def configure_optimizers(self) -> OptimizerLRScheduler:
-        g_opt = torch.optim.Adam(params=self.G.parameters(), lr=1e-4)
-        d_opt = torch.optim.Adam(params=self.D.parameters(), lr=1e-4)
-
-        return g_opt, d_opt

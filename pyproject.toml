@@ -17,5 +17,5 @@ dependencies = [
 [project.optional-dependencies]
 render = ["opencv-python", "av"]
 
-[tool.setuptools.packages]
-find = {}
+[tool.setuptools.packages.find]
+where = ["src"]

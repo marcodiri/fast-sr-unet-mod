@@ -1,5 +1,4 @@
 import os
-import time
 
 import utils
 
@@ -7,22 +6,17 @@ args = utils.ARArgs()
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 os.environ["CUDA_VISIBLE_DEVICES"] = args.CUDA_DEVICE
 
-import lpips  # courtesy of https://github.com/richzhang/PerceptualSimilarity
-import numpy as np
 import torch
-import tqdm
 from lightning import Trainer, seed_everything
 from lightning.pytorch.callbacks import ModelCheckpoint
 from torch import nn as nn
-from torch.utils.data import DataLoader
 
 import data_loader as dl
-import pytorch_ssim  # courtesy of https://github.com/Po-Hsun-Su/pytorch-ssim
 from models import (
     SRResNet,  # courtesy of https://github.com/sgrvinod/a-PyTorch-Tutorial-to-Super-Resolution
 )
-from models import Discriminator
-from pytorch_unet import GANModule, SimpleResNet, SRUnet, UNet
+from models import Discriminator, GANModule
+from pytorch_unet import SimpleResNet, SRUnet, UNet
 
 if __name__ == "__main__":
     seed_everything(42, workers=True)

@@ -9,7 +9,7 @@ import numpy as np
 import torch
 import torchvision
 from lightning.pytorch.utilities.types import EVAL_DATALOADERS, TRAIN_DATALOADERS
-from PIL import Image, ImageFile, ImageFilter
+from PIL import Image, ImageFile
 from torch.utils.data import DataLoader, Dataset, random_split
 from torchvision.transforms import functional
 
