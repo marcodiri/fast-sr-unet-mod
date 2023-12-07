@@ -14,5 +14,8 @@ dependencies = [
     "lpips"
 ]
 
+[project.optional-dependencies]
+render = ["opencv-python", "av"]
+
 [tool.setuptools.packages]
 find = {}
