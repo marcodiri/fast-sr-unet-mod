@@ -12,6 +12,7 @@ import numpy as np
 import torch
 import tqdm
 from lightning import Trainer, seed_everything
+from lightning.pytorch.callbacks import ModelCheckpoint
 from torch import nn as nn
 from torch.utils.data import DataLoader
 
@@ -65,17 +66,15 @@ if __name__ == "__main__":
     discriminator = Discriminator()
 
     dm = dl.FolderDataModule(
-        path=str(args.DATASET_DIR), patch_size=96, crf=int(args.CRF), use_ar=True
+        path=str(args.DATASET_DIR),
+        patch_size=96,
+        crf=int(args.CRF),
+        use_ar=True,
     )
 
     model = GANModule(generator, discriminator, args.W0, args.W1, args.L0)
-    trainer = Trainer()
+
+    checkpoint_callback = ModelCheckpoint(every_n_epochs=20)
+    trainer = Trainer(max_epochs=n_epochs, callbacks=[checkpoint_callback])
+
     trainer.fit(model, dm)
-
-    # torch.save(
-    #     model.state_dict(),
-    #     f"{args.EXPORT_DIR}/{arch_name}_epoch{e}_ssim{ssim_mean:.4f}_lpips{lpips_mean:.4f}_crf{args.CRF}.pkl",
-    # )
-
-    # having critic's weights saved was not useful, better sparing storage!
-    # torch.save(critic.state_dict(), 'critic_gan_{}.pkl'.format(e + starting_epoch))
