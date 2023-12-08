@@ -1,4 +1,7 @@
 import os
+from typing import Any
+
+from lightning.pytorch.utilities.types import STEP_OUTPUT
 
 import utils
 
@@ -6,9 +9,9 @@ args = utils.ARArgs()
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 os.environ["CUDA_VISIBLE_DEVICES"] = args.CUDA_DEVICE
 
-import torch
-from lightning import Trainer, seed_everything
+from lightning import Callback, LightningModule, Trainer, seed_everything
 from lightning.pytorch.callbacks import ModelCheckpoint
+from lightning.pytorch.loggers import WandbLogger
 from torch import nn as nn
 
 import data_loader as dl
@@ -22,7 +25,7 @@ if __name__ == "__main__":
     seed_everything(42, workers=True)
 
     args = utils.ARArgs()
-    torch.autograd.set_detect_anomaly(True)
+    # torch.autograd.set_detect_anomaly(True)
 
     print_model = args.VERBOSE
     arch_name = args.ARCHITECTURE
@@ -52,11 +55,6 @@ if __name__ == "__main__":
     else:
         raise Exception("Unknown architecture. Select one between:", args.archs)
 
-    if args.MODEL_NAME is not None:
-        print("Loading model: ", args.MODEL_NAME)
-        state_dict = torch.load(args.MODEL_NAME)
-        generator.load_state_dict(state_dict)
-
     discriminator = Discriminator()
 
     dm = dl.FolderDataModule(
@@ -68,7 +66,36 @@ if __name__ == "__main__":
 
     model = GANModule(generator, discriminator, args.W0, args.W1, args.L0)
 
+    wandb_logger = WandbLogger(project="srunet", log_model="all")
     checkpoint_callback = ModelCheckpoint(every_n_epochs=20)
-    trainer = Trainer(max_epochs=n_epochs, callbacks=[checkpoint_callback])
 
-    trainer.fit(model, dm)
+    class ImageLog(Callback):
+        def on_validation_batch_end(
+            self,
+            trainer: Trainer,
+            pl_module: LightningModule,
+            outputs: STEP_OUTPUT,
+            batch: Any,
+            batch_idx: int,
+            dataloader_idx: int = 0,
+        ) -> None:
+            if batch_idx == trainer.num_val_batches[0] - 1:
+                wandb_logger.log_image(
+                    key="samples",
+                    images=[outputs[1], outputs[2]],
+                    caption=["hq", "hq_fake"],
+                )
+
+    log_images_callback = ImageLog()
+
+    trainer = Trainer(
+        max_epochs=n_epochs,
+        callbacks=[checkpoint_callback, log_images_callback],
+        logger=wandb_logger,
+        check_val_every_n_epoch=20,
+    )
+
+    if args.MODEL_NAME is not None:
+        trainer.fit(model, dm, ckpt_path=args.MODEL_NAME)
+    else:
+        trainer.fit(model, dm)
