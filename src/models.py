@@ -518,6 +518,8 @@ class GANModule(L.LightningModule):
         y_fake = self.G(x)
 
         # train critic phase
+        d_opt.zero_grad()
+
         batch_dim = x.shape[0]
 
         pred_true = self.D(y_true)
@@ -535,12 +537,11 @@ class GANModule(L.LightningModule):
 
         loss_discr = loss_true + loss_fake
         loss_discr *= 0.5
-
-        d_opt.zero_grad()
         self.manual_backward(loss_discr)
         d_opt.step()
 
         ## train generator phase
+        g_opt.zero_grad()
 
         lpips_loss_ = self.lpips_loss(y_fake, y_true).mean()
         ssim_loss = 1.0 - self.ssim(y_fake, y_true)
@@ -554,7 +555,6 @@ class GANModule(L.LightningModule):
         )
         loss_gen = content_loss + self.hparams.bce_loss_weight * bce
 
-        g_opt.zero_grad()
         self.manual_backward(loss_gen)
         g_opt.step()
 
