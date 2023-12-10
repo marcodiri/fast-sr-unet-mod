@@ -8,8 +8,6 @@ from pytorch_unet import SimpleResNet, SRUnet, UNet  # noqa: F401
 
 
 def cli_main():
-    wandb_logger = WandbLogger(project="srunet", log_model="all")
-
     class ImageLog(Callback):
         def on_validation_batch_end(
             self,
@@ -21,11 +19,14 @@ def cli_main():
             dataloader_idx: int = 0,
         ) -> None:
             if batch_idx == trainer.num_val_batches[0] - 1:
-                wandb_logger.log_image(
-                    key="samples",
-                    images=[outputs[1], outputs[2]],
-                    caption=["hq", "hq_fake"],
-                )
+                try:
+                    pl_module.logger.log_image(
+                        key="samples",
+                        images=[outputs[1], outputs[2]],
+                        caption=["hq", "hq_fake"],
+                    )
+                except Exception as e:
+                    print(e)
 
     log_images_callback = ImageLog()
 
@@ -33,8 +34,7 @@ def cli_main():
         GANModule,
         FolderDataModule,
         trainer_defaults={
-            "devices": [0],
-            # "logger": wandb_logger,
+            "devices": 1,
             "callbacks": [log_images_callback],
         },
     )
