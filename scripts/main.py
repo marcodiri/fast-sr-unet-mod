@@ -5,6 +5,7 @@ from lightning.pytorch.loggers import WandbLogger
 from data_loader import FolderDataModule
 from models import Discriminator, GANModule, SRResNet  # noqa: F401
 from pytorch_unet import SimpleResNet, SRUnet, UNet  # noqa: F401
+from style_srunet import UnetUpsampler  # noqa: F401
 
 
 def cli_main():
@@ -37,6 +38,7 @@ def cli_main():
             "devices": 1,
             "callbacks": [log_images_callback],
         },
+        save_config_kwargs={"overwrite": True},
     )
 
 

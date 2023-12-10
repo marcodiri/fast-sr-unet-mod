@@ -11,6 +11,7 @@ from kornia.filters import filter2d
 from torch import Tensor, nn
 
 from attend import Attend
+from models import BaseGenerator
 
 
 # helpers functions
@@ -420,7 +421,7 @@ class AdaptiveConv2DMod(nn.Module):
 
 
 # model
-class UnetUpsampler(nn.Module):
+class UnetUpsampler(BaseGenerator):
     @beartype
     def __init__(
         self,
