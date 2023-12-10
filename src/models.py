@@ -351,7 +351,11 @@ def cat_tensor(t1, t2):
     return torch.cat([t1, t2], dim=1)
 
 
-class Generator(nn.Module):
+class BaseGenerator(nn.Module):
+    pass
+
+
+class Generator(BaseGenerator):
     """
     The generator in the SRGAN, as defined in the paper. Architecture identical to the SRResNet.
     """
@@ -490,11 +494,11 @@ class Discriminator(nn.Module):
 class GANModule(L.LightningModule):
     def __init__(
         self,
-        generator,
-        discriminator,
-        lpips_loss_weight,
-        ssim_loss_weight,
-        bce_loss_weight,
+        generator: BaseGenerator,
+        discriminator: Discriminator,
+        lpips_loss_weight=1.0,
+        ssim_loss_weight=1.0,
+        bce_loss_weight=1e-3,
     ):
         super().__init__()
         self.save_hyperparameters(ignore=["generator", "discriminator"])
@@ -515,9 +519,11 @@ class GANModule(L.LightningModule):
 
         x, y_true = batch
 
+        # train discriminator phase
+        d_opt.zero_grad()
+
         y_fake = self.G(x)
 
-        # train critic phase
         batch_dim = x.shape[0]
 
         pred_true = self.D(y_true)
@@ -536,11 +542,11 @@ class GANModule(L.LightningModule):
         loss_discr = loss_true + loss_fake
         loss_discr *= 0.5
 
-        d_opt.zero_grad()
         self.manual_backward(loss_discr)
         d_opt.step()
 
         ## train generator phase
+        g_opt.zero_grad()
 
         lpips_loss_ = self.lpips_loss(y_fake, y_true).mean()
         ssim_loss = 1.0 - self.ssim(y_fake, y_true)
@@ -554,7 +560,6 @@ class GANModule(L.LightningModule):
         )
         loss_gen = content_loss + self.hparams.bce_loss_weight * bce
 
-        g_opt.zero_grad()
         self.manual_backward(loss_gen)
         g_opt.step()
 
