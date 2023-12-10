@@ -7,8 +7,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn import functional as F
 
+from models import BaseGenerator
 
-class SimpleResNet(nn.Module):
+
+class SimpleResNet(BaseGenerator):
     def __init__(self, n_filters, n_blocks):
         super(SimpleResNet, self).__init__()
         self.conv1 = UnetBlock(
@@ -143,7 +145,7 @@ def sr_espcn(n_filters, scale_factor=2, out_channels=3, kernel_size=1):
     )
 
 
-class UNet(nn.Module):
+class UNet(BaseGenerator):
     def __init__(
         self,
         in_dim=3,
@@ -286,7 +288,7 @@ class UNet(nn.Module):
                     block.reparametrize_convs()
 
 
-class SRUnet(nn.Module):
+class SRUnet(BaseGenerator):
     def __init__(
         self,
         in_dim=3,
