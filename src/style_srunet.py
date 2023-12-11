@@ -25,12 +25,6 @@ def default(val, d):
     return d() if callable(d) else d
 
 
-def cast_tuple(t, length=1):
-    if isinstance(t, tuple):
-        return t
-    return (t,) * length
-
-
 def identity(t, *args, **kwargs):
     return t
 
@@ -494,7 +488,7 @@ class UnetUpsampler(BaseGenerator):
         )
 
         # attention
-        full_attn = cast_tuple(full_attn, length=len(dim_mults))
+        full_attn = tuple(full_attn)
         assert len(full_attn) == len(dim_mults)
 
         FullAttention = partial(Transformer, flash_attn=flash_attn)
