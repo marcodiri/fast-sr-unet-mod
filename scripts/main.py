@@ -1,6 +1,5 @@
 from lightning import Callback
 from lightning.pytorch.cli import LightningCLI
-from lightning.pytorch.loggers import WandbLogger
 
 from data_loader import FolderDataModule
 from models import Discriminator, GANModule, SRResNet  # noqa: F401
@@ -19,7 +18,7 @@ def cli_main():
             batch_idx: int,
             dataloader_idx: int = 0,
         ) -> None:
-            if batch_idx == trainer.num_val_batches[0] - 1:
+            if batch_idx == trainer.num_val_batches[0] - 2:
                 try:
                     pl_module.logger.log_image(
                         key="samples",
