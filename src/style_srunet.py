@@ -427,8 +427,7 @@ class UnetUpsampler(BaseGenerator):
         self,
         dim,
         *,
-        image_size,
-        input_image_size,
+        upscale_factor,
         init_dim=None,
         out_dim=None,
         style_network: Optional[Union[StyleNetwork, Dict]] = None,
@@ -453,7 +452,6 @@ class UnetUpsampler(BaseGenerator):
         super().__init__()
 
         # style network
-
         if isinstance(style_network, dict):
             style_network = StyleNetwork(**style_network)
 
@@ -465,27 +463,17 @@ class UnetUpsampler(BaseGenerator):
 
         self.unconditional = unconditional
 
-        assert is_power_of_two(image_size) and is_power_of_two(
-            input_image_size
-        ), "both output image size and input image size must be power of 2"
-        assert (
-            input_image_size < image_size
-        ), "input image size must be smaller than the output image size, thus upsampling"
+        assert is_power_of_two(upscale_factor), "upscale factor must be power of 2"
 
-        num_layer_no_downsample = int(log2(image_size) - log2(input_image_size))
+        num_layer_no_downsample = int(log2(upscale_factor))
         assert num_layer_no_downsample <= len(
             dim_mults
         ), "you need more stages in this unet for the level of upsampling"
 
-        self.image_size = image_size
-        self.input_image_size = input_image_size
-
         # setup adaptive conv
-
         style_embed_split_dims = []
 
         # determine dimensions
-
         self.channels = channels
         input_channels = channels
 
@@ -506,7 +494,6 @@ class UnetUpsampler(BaseGenerator):
         )
 
         # attention
-
         full_attn = cast_tuple(full_attn, length=len(dim_mults))
         assert len(full_attn) == len(dim_mults)
 
@@ -515,11 +502,9 @@ class UnetUpsampler(BaseGenerator):
         assert unconditional or len(full_attn) == len(dim_mults)
 
         # skip connection scale
-
         self.skip_connect_scale = default(skip_connect_scale, 2**-0.5)
 
         # layers
-
         self.downs = nn.ModuleList([])
         self.ups = nn.ModuleList([])
         num_resolutions = len(in_out)
@@ -589,22 +574,13 @@ class UnetUpsampler(BaseGenerator):
         self.final_to_rgb = nn.Conv2d(dim, channels, 1)
 
         # resize mode
-
         self.resize_mode = resize_mode
 
         # determine the projection of the style embedding to convolutional modulation weights (+ adaptive kernel selection weights) for all layers
-
         self.style_to_conv_modulations = nn.Linear(
             style_network.dim, sum(style_embed_split_dims)
         )
         self.style_embed_split_dims = style_embed_split_dims
-
-    @property
-    def allowable_rgb_resolutions(self):
-        input_res_base = int(log2(self.input_image_size))
-        output_res_base = int(log2(self.image_size))
-        allowed_rgb_res_base = list(range(input_res_base, output_res_base))
-        return [*map(lambda p: 2**p, allowed_rgb_res_base)]
 
     @property
     def device(self):
@@ -615,7 +591,7 @@ class UnetUpsampler(BaseGenerator):
         return sum([p.numel() for p in self.parameters()])
 
     def resize_image_to(self, x, size):
-        return F.interpolate(x, (size, size), mode=self.resize_mode)
+        return F.interpolate(x, size, mode=self.resize_mode)
 
     def forward(
         self,
@@ -629,10 +605,7 @@ class UnetUpsampler(BaseGenerator):
         shape = x.shape
         batch_size = shape[0]
 
-        assert shape[-2:] == ((self.input_image_size,) * 2)
-
         # styles
-
         if not exists(styles):
             assert exists(self.style_network)
 
@@ -645,19 +618,16 @@ class UnetUpsampler(BaseGenerator):
             )  # TODO: try passing noise and lowres image
 
         # project styles to conv modulations
-
         conv_mods = self.style_to_conv_modulations(styles)
         conv_mods = conv_mods.split(self.style_embed_split_dims, dim=-1)
         conv_mods = iter(conv_mods)
 
         # initial conv
-
         x = self.init_conv(x)
 
         h = []
 
         # downsample stages
-
         for block1, block2, attn, downsample in self.downs:
             x = block1(x, conv_mods_iter=conv_mods)
             h.append(x)
@@ -675,7 +645,6 @@ class UnetUpsampler(BaseGenerator):
         x = self.mid_block2(x, conv_mods_iter=conv_mods)
 
         # rgbs
-
         rgbs = []
 
         init_rgb_shape = list(x.shape)
@@ -685,7 +654,6 @@ class UnetUpsampler(BaseGenerator):
         rgbs.append(rgb)
 
         # upsample stages
-
         for upsample, upsample_rgb, to_rgb, block1, block2, attn in self.ups:
             x = upsample(x)
             rgb = upsample_rgb(rgb)
@@ -693,8 +661,8 @@ class UnetUpsampler(BaseGenerator):
             res1 = h.pop() * self.skip_connect_scale
             res2 = h.pop() * self.skip_connect_scale
 
-            fmap_size = x.shape[-1]
-            residual_fmap_size = res1.shape[-1]
+            fmap_size = x.shape[-2:]
+            residual_fmap_size = res1.shape[-2:]
 
             if residual_fmap_size != fmap_size:
                 res1 = self.resize_image_to(res1, fmap_size)
@@ -721,11 +689,9 @@ class UnetUpsampler(BaseGenerator):
             return rgb
 
         # only keep those rgbs whose feature map is greater than the input image to be upsampled
-
         rgbs = list(filter(lambda t: t.shape[-1] > shape[-1], rgbs))
 
         # and return the original input image as the smallest rgb
-
         rgbs = [lowres_image, *rgbs]
 
         return rgb, rgbs
