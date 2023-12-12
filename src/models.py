@@ -524,11 +524,6 @@ class GANModule(L.LightningModule):
 
         y_fake = self.G(x)
 
-        # train critic phase
-        d_opt.zero_grad()
-
-        batch_dim = x.shape[0]
-
         pred_true = self.D(y_true)
 
         # forward pass on true
@@ -604,7 +599,7 @@ class GANModule(L.LightningModule):
 
     def configure_optimizers(self) -> OptimizerLRScheduler:
         g_opt = torch.optim.Adam(params=self.G.parameters(), lr=1e-4)
-        d_opt = torch.optim.Adam(params=self.D.parameters(), lr=1e-4)
+        d_opt = torch.optim.SGD(params=self.D.parameters(), lr=1e-4)
 
         return g_opt, d_opt
 
