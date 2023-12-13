@@ -671,6 +671,7 @@ class UnetUpsampler(BaseGenerator):
             x = attn(x)
 
             rgb = rgb + to_rgb(x)
+            rgb = F.tanh(rgb)
             rgbs.append(rgb)
 
         x = self.final_res_block(x, conv_mods_iter=conv_mods)
@@ -678,6 +679,7 @@ class UnetUpsampler(BaseGenerator):
         assert len([*conv_mods]) == 0
 
         rgb = rgb + self.final_to_rgb(x)
+        rgb = F.tanh(rgb)
 
         if not return_all_rgbs:
             return rgb
