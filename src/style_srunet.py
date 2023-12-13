@@ -285,26 +285,20 @@ class EqualLinear(nn.Module):
 
 
 class StyleNetwork(nn.Module):
-    def __init__(self, dim, depth, lr_mul=0.1, dim_text_latent=0):
+    def __init__(self, dim, depth, lr_mul=0.1):
         super().__init__()
         self.dim = dim
-        self.dim_text_latent = dim_text_latent
 
         layers = []
         for i in range(depth):
             is_first = i == 0
-            dim_in = (dim + dim_text_latent) if is_first else dim
 
-            layers.extend([EqualLinear(dim_in, dim, lr_mul), leaky_relu()])
+            layers.extend([EqualLinear(dim, dim, lr_mul), leaky_relu()])
 
         self.net = nn.Sequential(*layers)
 
     def forward(self, x, text_latent=None):
         x = F.normalize(x, dim=1)
-
-        if self.dim_text_latent > 0:
-            assert exists(text_latent)
-            x = torch.cat((x, text_latent), dim=-1)
 
         return self.net(x)
 
@@ -424,8 +418,7 @@ class UnetUpsampler(BaseGenerator):
         upscale_factor,
         init_dim=None,
         out_dim=None,
-        style_network: Optional[Union[StyleNetwork, Dict]] = None,
-        style_network_dim=None,
+        style_network: Optional[Union[StyleNetwork, Dict]],
         dim_mults=(1, 2, 4, 8, 16),
         channels=3,
         resnet_block_groups=8,
@@ -450,10 +443,6 @@ class UnetUpsampler(BaseGenerator):
             style_network = StyleNetwork(**style_network)
 
         self.style_network = style_network
-
-        assert exists(style_network) ^ exists(
-            style_network_dim
-        ), "either style_network or style_network_dim must be passed in"
 
         self.unconditional = unconditional
 
@@ -607,9 +596,7 @@ class UnetUpsampler(BaseGenerator):
                 noise,
                 torch.randn((batch_size, self.style_network.dim), device=self.device),
             )
-            styles = self.style_network(
-                noise, None
-            )  # TODO: try passing noise and lowres image
+            styles = self.style_network(noise)
 
         # project styles to conv modulations
         conv_mods = self.style_to_conv_modulations(styles)
