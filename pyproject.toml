@@ -11,7 +11,10 @@ dependencies = [
     "torch",
     "torchvision",
     "lightning[pytorch-extra]",
-    "lpips"
+    "lpips",
+    'beartype',
+    'einops>=0.6',
+    'kornia',
 ]
 
 [project.optional-dependencies]
