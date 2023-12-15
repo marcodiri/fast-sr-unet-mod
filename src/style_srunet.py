@@ -297,7 +297,7 @@ class StyleNetwork(nn.Module):
 
         self.net = nn.Sequential(*layers)
 
-    def forward(self, x, text_latent=None):
+    def forward(self, x):
         x = F.normalize(x, dim=1)
 
         return self.net(x)
@@ -678,3 +678,150 @@ class UnetUpsampler(BaseGenerator):
         rgbs = [lowres_image, *rgbs]
 
         return rgb, rgbs
+
+
+class StyleSRUnet(BaseGenerator):
+    def __init__(
+        self,
+        *,
+        channels=3,
+        upscale_factor,
+        style_network: Union[StyleNetwork, Dict],
+        init_dim: int = 32,
+        dim_mults: Iterable[int] = (2, 2, 2, 2),
+        layer_multiplier=1,
+        resnet_block_groups=8,
+        num_conv_kernels=2,
+    ):
+        super().__init__()
+
+        # style network
+        if isinstance(style_network, dict):
+            style_network = StyleNetwork(**style_network)
+
+        self.style_network = style_network
+
+        self.upscale_factor = upscale_factor
+
+        dims = [init_dim, *map(lambda m: init_dim * m, dim_mults)]
+        in_out = list(zip(dims[:-1], dims[1:]))
+
+        # setup adaptive conv
+        style_embed_split_dims = []
+
+        block_klass = partial(
+            ResnetBlock,
+            groups=resnet_block_groups,
+            num_conv_kernels=num_conv_kernels,
+            style_dims=style_embed_split_dims,
+        )
+
+        self.dconv_down1 = block_klass(
+            channels,
+            32,
+        )
+        self.dconv_down2 = block_klass(
+            32,
+            64,
+        )
+        self.dconv_down3 = block_klass(
+            64,
+            64,
+        )
+        self.dconv_down4 = block_klass(
+            64,
+            64,
+        )
+
+        self.dconv_up3 = block_klass(
+            64 * 2,
+            64,
+        )
+        self.dconv_up2 = block_klass(
+            64 * 2,
+            64,
+        )
+        self.dconv_up1 = block_klass(
+            64 + 32,
+            32,
+        )
+
+        self.downsample1 = Downsample(32)
+        self.downsample2 = Downsample(64)
+        self.downsample3 = Downsample(64)
+        self.upsample1 = PixelShuffleUpsample(64)
+        self.upsample2 = PixelShuffleUpsample(64)
+        self.upsample3 = PixelShuffleUpsample(64)
+        self.upsample4 = PixelShuffleUpsample(32)
+
+        self.final_to_rgb = nn.Conv2d(32, channels, 1)
+
+        # determine the projection of the style embedding to convolutional modulation weights (+ adaptive kernel selection weights) for all layers
+        self.style_to_conv_modulations = nn.Linear(
+            style_network.dim, sum(style_embed_split_dims)
+        )
+        self.style_embed_split_dims = style_embed_split_dims
+
+    @property
+    def device(self):
+        return next(self.parameters()).device
+
+    def forward(self, input, styles=None, noise=None):
+        x = input
+
+        shape = x.shape
+        batch_size = shape[0]
+
+        # styles
+        if not exists(styles):
+            assert exists(self.style_network)
+
+            noise = default(
+                noise,
+                torch.randn((batch_size, self.style_network.dim), device=self.device),
+            )
+            styles = self.style_network(noise)
+
+        # project styles to conv modulations
+        conv_mods = self.style_to_conv_modulations(styles)
+        conv_mods = conv_mods.split(self.style_embed_split_dims, dim=-1)
+        conv_mods = iter(conv_mods)
+
+        conv1 = self.dconv_down1(x, conv_mods_iter=conv_mods)
+        x = self.downsample1(conv1)
+
+        conv2 = self.dconv_down2(x, conv_mods_iter=conv_mods)
+        x = self.downsample2(conv2)
+
+        conv3 = self.dconv_down3(x, conv_mods_iter=conv_mods)
+        x = self.downsample3(conv3)
+
+        x = self.dconv_down4(x, conv_mods_iter=conv_mods)
+
+        x = self.upsample1(x)
+        x = torch.cat([x, conv3], dim=1)
+
+        x = self.dconv_up3(x, conv_mods_iter=conv_mods)
+        x = self.upsample2(x)
+        x = torch.cat([x, conv2], dim=1)
+
+        x = self.dconv_up2(x, conv_mods_iter=conv_mods)
+        x = self.upsample3(x)
+        x = torch.cat([x, conv1], dim=1)
+
+        x = self.dconv_up1(x, conv_mods_iter=conv_mods)
+
+        assert len([*conv_mods]) == 0
+
+        x = self.upsample4(x)
+
+        x = self.final_to_rgb(x)
+
+        x += F.interpolate(
+            input,
+            scale_factor=self.upscale_factor,
+            mode="bicubic",
+        )
+        x = F.tanh(x)
+
+        return x

@@ -7,7 +7,7 @@ from torchvision.utils import make_grid
 from data_loader import FolderDataModule
 from models import Discriminator, GANModule, SRResNet  # noqa: F401
 from pytorch_unet import SimpleResNet, SRUnet, UNet  # noqa: F401
-from style_srunet import UnetUpsampler  # noqa: F401
+from style_srunet import StyleSRUnet, UnetUpsampler  # noqa: F401
 
 
 def cli_main():
