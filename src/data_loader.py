@@ -84,9 +84,11 @@ def _get_pics_in_subfolder(path, ext="jpg"):
 class ARDataset(Dataset):
     def __init__(
         self,
-        path,
+        hq_path,
+        lq_path="",
+        extension="jpg",
+        *,
         patch_size,
-        crf,
         path_filter="",
         use_ar=True,
         dataset_upscale_factor=2,
@@ -99,13 +101,15 @@ class ARDataset(Dataset):
         how the dataset is built.
 
         Args
-            path (str):
-                base path of the dataset dir. Check the README for the organization of the dataset.
+            hq_path (str):
+                base path of the hq dataset dir.
+            lq_path (str):
+                base path of the lq dataset dir. Optional if use_ar=False.
+            extension (str, default="jpg"):
+                extension of images.
             patch_size (int):
                 width/height of the training patch. the model is going to be trained on patches,
                 randomly extracted from the datasets.
-            crf (int):
-                crf of the encoded clips.
             path_filter (str):
                 additional string that must be present in the path.
             use_ar (bool, default=True):
@@ -122,25 +126,29 @@ class ARDataset(Dataset):
         """
 
         self.patch_size = patch_size
-        self.path = path
+        self.hq_path = hq_path
+        self.lq_path = lq_path
+        self.path_filter = path_filter
+        self.extension = extension
         self.ar = use_ar
         self.upscale_factor = dataset_upscale_factor
         self.rf = rescale_factor
 
-        hq_dir = path + "/frames_HQ"
-        lq_dir = path + f"/frames/frames_CRF_{crf}"
-
         self.hq_dir = sorted(
             filter(
                 lambda p: str(path_filter) in str(p),
-                _get_pics_in_subfolder(hq_dir, ext="png"),
+                _get_pics_in_subfolder(hq_path, ext=extension),
             )
         )
-        self.lq_dir = sorted(
-            filter(
-                lambda p: str(path_filter) in str(p),
-                _get_pics_in_subfolder(lq_dir, ext="png"),
+        self.lq_dir = (
+            sorted(
+                filter(
+                    lambda p: str(path_filter) in str(p),
+                    _get_pics_in_subfolder(lq_path, ext=extension),
+                )
             )
+            if lq_path != ""
+            else []
         )
 
         assert not use_ar or len(self.hq_dir) == len(
@@ -206,7 +214,10 @@ class ARDataset(Dataset):
 class FolderDataModule(L.LightningDataModule):
     def __init__(
         self,
-        path,
+        hq_path,
+        lq_path="",
+        extension="jpg",
+        *,
         patch_size,
         crf,
         path_filter="",
