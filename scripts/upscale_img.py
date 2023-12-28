@@ -3,7 +3,7 @@ import argparse
 import torch
 
 import data_loader
-from style_srunet import UnetUpsampler
+from style_srunet import StyleSRUnet, UnetUpsampler
 
 parser = argparse.ArgumentParser()
 parser.add_argument(
@@ -21,14 +21,12 @@ parser.add_argument(
 
 args = parser.parse_args()
 
-generator = UnetUpsampler(
+generator = StyleSRUnet(
     style_network=dict(
         dim=64,
         depth=4,
     ),
-    dim=32,
     upscale_factor=2,
-    unconditional=True,
 )
 
 checkpoint = torch.load(args.ckpt)

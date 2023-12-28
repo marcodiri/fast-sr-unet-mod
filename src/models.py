@@ -520,9 +520,13 @@ class GANModule(L.LightningModule):
         x, y_true = batch
 
         # train discriminator phase
+        g_opt.zero_grad()
         d_opt.zero_grad()
 
         y_fake = self.G(x)
+
+        for param in self.D.parameters():
+            param.requires_grad = True
 
         pred_true = self.D(y_true)
 
@@ -543,7 +547,8 @@ class GANModule(L.LightningModule):
         d_opt.step()
 
         ## train generator phase
-        g_opt.zero_grad()
+        for param in self.D.parameters():
+            param.requires_grad = False
 
         lpips_loss_ = self.lpips_loss(y_fake, y_true).mean()
         ssim_loss = 1.0 - self.ssim(y_fake, y_true)
