@@ -351,7 +351,11 @@ def cat_tensor(t1, t2):
     return torch.cat([t1, t2], dim=1)
 
 
-class BaseGenerator(nn.Module):
+class BaseGenerator(L.LightningModule):
+    pass
+
+
+class BaseDiscriminator(L.LightningModule):
     pass
 
 
@@ -421,7 +425,7 @@ class Generator(BaseGenerator):
         return self.downsample(sr_imgs)
 
 
-class Discriminator(nn.Module):
+class Discriminator(BaseDiscriminator):
     """
     The discriminator in the SRGAN, as defined in the paper.
     """
@@ -519,10 +523,13 @@ class GANModule(L.LightningModule):
 
         x, y_true = batch
 
-        # train discriminator phase
+        g_opt.zero_grad()
         d_opt.zero_grad()
 
+        # train discriminator phase
         y_fake = self.G(x)
+
+        self.D.unfreeze()
 
         pred_true = self.D(y_true)
 
@@ -543,7 +550,7 @@ class GANModule(L.LightningModule):
         d_opt.step()
 
         ## train generator phase
-        g_opt.zero_grad()
+        self.D.freeze()
 
         lpips_loss_ = self.lpips_loss(y_fake, y_true).mean()
         ssim_loss = 1.0 - self.ssim(y_fake, y_true)
@@ -564,7 +571,8 @@ class GANModule(L.LightningModule):
             {
                 "g_loss": loss_gen,
                 "d_loss": loss_discr,
-                "content_loss": content_loss,
+                "lpips_loss": lpips_loss_,
+                "ssim_loss": ssim_loss,
                 "bce_loss": bce,
             },
             prog_bar=True,
