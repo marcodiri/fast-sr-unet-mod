@@ -59,7 +59,6 @@ class UnetBlock(nn.Module):
         self.is_reparametrized = False
         self.use_residual = use_residual
 
-        # if in_channels == out_channels and use_residual:
         self.conv_adapter = nn.Conv2d(in_channels, out_channels, 1, padding=0)
         self.conv1 = nn.Conv2d(
             in_channels,
@@ -69,15 +68,15 @@ class UnetBlock(nn.Module):
             stride=stride,
         )
         self.bn = nn.BatchNorm2d(out_channels) if use_bn else nn.Identity()
-        # self.act = nn.ReLU6()
-        # self.act = nn.LeakyReLU(0.2, inplace=True) # used by srgan_128x128_94_10-01-2021_0917_valloss0.30919_mobilenet_flickr.pkl
-        self.act = nn.ReLU(inplace=True)
+        self.act = nn.LeakyReLU(0.2, inplace=True)
 
     def forward(self, input):
         x = self.conv1(input)
         if self.use_residual and not self.is_reparametrized:
             if self.in_channels == self.out_channels:
-                x += input + self.conv_adapter(input)
+                x += input
+            else:
+                x += self.conv_adapter(input)
         x = self.bn(x)
         x = self.act(x)
         return x
@@ -451,5 +450,4 @@ class SRUnet(BaseGenerator):
         for layer in self.layers:
             for block in layer:
                 if hasattr(block, "conv_adapter"):
-                    block.reparametrize_convs()
                     block.reparametrize_convs()
