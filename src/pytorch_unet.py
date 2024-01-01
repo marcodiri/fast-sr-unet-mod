@@ -5,6 +5,7 @@ from builtins import super
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from einops import rearrange, repeat
 from torch.nn import functional as F
 
 from models import BaseGenerator
@@ -41,6 +42,76 @@ class SimpleResNet(BaseGenerator):
         for block in self.convblocks:
             if hasattr(block, "conv_adapter"):
                 block.reparametrize_convs()
+
+
+# Frequency Enhancement (FE) Operation
+class FE(nn.Module):
+    def __init__(self, in_channels, channels):
+        super(FE, self).__init__()
+        self.pool = nn.AvgPool2d(kernel_size=4, stride=4)
+
+        self.k2 = nn.Conv2d(
+            in_channels, channels, kernel_size=3, stride=1, padding=1, bias=False
+        )
+        self.k3 = nn.Conv2d(
+            in_channels, channels, kernel_size=3, stride=1, padding=1, bias=False
+        )
+        self.k4 = nn.Conv2d(
+            in_channels, channels, kernel_size=3, stride=1, padding=1, bias=False
+        )
+
+    def forward(self, x: torch.Tensor):
+        h1 = F.interpolate(self.pool(x), (x.size(-2), x.size(-1)), mode="nearest")
+        h2 = x - h1
+        F2 = torch.sigmoid(torch.add(self.k2(h2), x))
+        out = torch.mul(self.k3(x), F2)
+        out = self.k4(out)
+
+        return out
+
+
+# Frequency-based Enhancement Block (FEB)
+class FEB(nn.Module):
+    def __init__(
+        self,
+        in_channels,
+        out_channels,
+        use_bn=True,
+        use_residual=True,
+    ):
+        super(FEB, self).__init__()
+        self.use_residual = use_residual
+
+        channels = out_channels // 2
+        self.path_1 = nn.Conv2d(in_channels, channels, kernel_size=1, bias=False)
+        self.path_2 = nn.Conv2d(in_channels, channels, kernel_size=1, bias=False)
+        self.act = nn.LeakyReLU(0.2, inplace=True)
+        self.k1 = nn.Conv2d(
+            channels, channels, kernel_size=3, stride=1, padding=1, bias=False
+        )
+        self.HConv = FE(channels, channels)
+        self.conv = nn.Conv2d(channels * 2, out_channels, kernel_size=1, bias=False)
+        self.bn = nn.BatchNorm2d(out_channels) if use_bn else nn.Identity()
+
+    def forward(self, x: torch.Tensor):
+        # Low-Frequency Path
+        low = self.path_1(x)
+        low = self.act(low)
+        low = self.k1(low)
+        low = self.act(low)
+
+        # High-Frequency Path
+        high = self.path_2(x)
+        high = self.act(high)
+        high = self.HConv(high)
+        high = self.act(high)
+
+        output = self.conv(torch.cat([low, high], dim=1))
+        if self.use_residual:
+            output = output + x
+        output = self.bn(output)
+
+        return output
 
 
 class UnetBlock(nn.Module):
@@ -97,7 +168,7 @@ class UnetBlock(nn.Module):
         self.is_reparametrized = True
 
 
-def layer_generator(
+def unet_block_generator(
     in_channels,
     out_channels,
     use_batch_norm=False,
@@ -124,8 +195,37 @@ def layer_generator(
                 )
                 for _ in range(n_blocks - 1)
             ]
-            # nn.Conv2d(out_channels, out_channels, 3, padding=1),
-            # nn.ReLU(inplace=True)
+        )
+    )
+
+
+def feb_block_generator(
+    in_channels,
+    out_channels,
+    use_batch_norm=False,
+    use_bias=True,
+    residual_block=True,
+    n_blocks=2,
+):
+    n_blocks = int(n_blocks)
+    first_layer = UnetBlock(
+        in_channels=in_channels,
+        out_channels=out_channels,
+        use_bn=use_batch_norm,
+        use_residual=residual_block,
+    )
+    return nn.Sequential(
+        *(
+            [first_layer]
+            + [
+                FEB(
+                    in_channels=out_channels,
+                    out_channels=out_channels,
+                    use_bn=use_batch_norm,
+                    use_residual=residual_block,
+                )
+                for _ in range(n_blocks - 1)
+            ]
         )
     )
 
@@ -179,33 +279,33 @@ class UNet(BaseGenerator):
         self.n_class = n_class
         self.scale_factor = scale_factor
 
-        self.dconv_down1 = layer_generator(in_dim, n_filters, use_batch_norm=False)
-        self.dconv_down2 = layer_generator(
+        self.dconv_down1 = unet_block_generator(in_dim, n_filters, use_batch_norm=False)
+        self.dconv_down2 = unet_block_generator(
             n_filters, n_filters * 2, use_batch_norm=batchnorm, n_blocks=2
         )
-        self.dconv_down3 = layer_generator(
+        self.dconv_down3 = unet_block_generator(
             n_filters * 2, n_filters * 4, use_batch_norm=batchnorm, n_blocks=2
         )
-        self.dconv_down4 = layer_generator(
+        self.dconv_down4 = unet_block_generator(
             n_filters * 4, n_filters * 8, use_batch_norm=batchnorm, n_blocks=2
         )
 
         self.maxpool = nn.MaxPool2d(2)
         self.upsample = nn.Upsample(scale_factor=2, mode="bilinear")
 
-        self.dconv_up3 = layer_generator(
+        self.dconv_up3 = unet_block_generator(
             n_filters * 8 + n_filters * 4,
             n_filters * 4,
             use_batch_norm=batchnorm,
             n_blocks=2,
         )
-        self.dconv_up2 = layer_generator(
+        self.dconv_up2 = unet_block_generator(
             n_filters * 4 + n_filters * 2,
             n_filters * 2,
             use_batch_norm=batchnorm,
             n_blocks=2,
         )
-        self.dconv_up1 = layer_generator(
+        self.dconv_up1 = unet_block_generator(
             n_filters * 2 + n_filters, n_filters, use_batch_norm=False, n_blocks=2
         )
 
@@ -287,6 +387,39 @@ class UNet(BaseGenerator):
                     block.reparametrize_convs()
 
 
+def exists(x):
+    return x is not None
+
+
+def default(val, d):
+    if exists(val):
+        return val
+    return d() if callable(d) else d
+
+
+class PixelShuffleUpsample(nn.Module):
+    def __init__(self, dim, dim_out=None):
+        super().__init__()
+        dim_out = default(dim_out, dim)
+
+        conv = nn.Conv2d(dim, dim_out * 4, 1)
+        self.init_conv_(conv)
+
+        self.net = nn.Sequential(conv, nn.SiLU(), nn.PixelShuffle(2))
+
+    def init_conv_(self, conv):
+        o, *rest_shape = conv.weight.shape
+        conv_weight = torch.empty(o // 4, *rest_shape)
+        nn.init.kaiming_uniform_(conv_weight)
+        conv_weight = repeat(conv_weight, "o ... -> (o 4) ...")
+
+        conv.weight.data.copy_(conv_weight)
+        nn.init.zeros_(conv.bias.data)
+
+    def forward(self, x):
+        return self.net(x)
+
+
 class SRUnet(BaseGenerator):
     def __init__(
         self,
@@ -329,22 +462,22 @@ class SRUnet(BaseGenerator):
         self.n_class = n_class
         self.scale_factor = scale_factor
 
-        self.dconv_down1 = layer_generator(
+        self.dconv_down1 = feb_block_generator(
             in_dim, n_filters // 2, use_batch_norm=False, n_blocks=2 * layer_multiplier
         )
-        self.dconv_down2 = layer_generator(
+        self.dconv_down2 = feb_block_generator(
             n_filters // 2,
             n_filters,
             use_batch_norm=batchnorm,
             n_blocks=3 * layer_multiplier,
         )
-        self.dconv_down3 = layer_generator(
+        self.dconv_down3 = feb_block_generator(
             n_filters,
             n_filters,
             use_batch_norm=batchnorm,
             n_blocks=3 * layer_multiplier,
         )
-        self.dconv_down4 = layer_generator(
+        self.dconv_down4 = feb_block_generator(
             n_filters,
             n_filters,
             use_batch_norm=batchnorm,
@@ -358,21 +491,26 @@ class SRUnet(BaseGenerator):
             )
         else:
             self.downsample = nn.Identity()
-        self.upsample = nn.Upsample(scale_factor=2, mode="bilinear")
+        # self.upsample = nn.Upsample(scale_factor=2, mode="bilinear")
 
-        self.dconv_up3 = layer_generator(
+        self.upsample4 = PixelShuffleUpsample(n_filters)
+        self.upsample3 = PixelShuffleUpsample(n_filters)
+        self.upsample2 = PixelShuffleUpsample(n_filters)
+        self.upsample1 = PixelShuffleUpsample(n_filters // 2)
+
+        self.dconv_up3 = unet_block_generator(
             n_filters + n_filters,
             n_filters,
             use_batch_norm=batchnorm,
             n_blocks=3 * layer_multiplier,
         )
-        self.dconv_up2 = layer_generator(
+        self.dconv_up2 = unet_block_generator(
             n_filters + n_filters,
             n_filters,
             use_batch_norm=batchnorm,
             n_blocks=3 * layer_multiplier,
         )
-        self.dconv_up1 = layer_generator(
+        self.dconv_up1 = unet_block_generator(
             n_filters + n_filters // 2,
             n_filters // 2,
             use_batch_norm=False,
@@ -414,22 +552,24 @@ class SRUnet(BaseGenerator):
 
         x = self.dconv_down4(x)
 
-        x = self.upsample(x)
+        x = self.upsample4(x)
         x = torch.cat([x, conv3], dim=1)
 
         x = self.dconv_up3(x)
-        x = self.upsample(x)
+        x = self.upsample3(x)
         x = torch.cat([x, conv2], dim=1)
 
         x = self.dconv_up2(x)
-        x = self.upsample(x)
+        x = self.upsample2(x)
         x = torch.cat([x, conv1], dim=1)
 
         x = self.dconv_up1(x)
 
-        x = self.conv_last(x)
-
         sf = self.scale_factor
+        if sf == 4:
+            x = self.upsample1(x)
+
+        x = self.conv_last(x)
 
         if sf > 1:
             x = self.pixel_shuffle(x)
