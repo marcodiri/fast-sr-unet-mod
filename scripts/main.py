@@ -1,10 +1,11 @@
 import torch
 import torch.nn.functional as F
-from lightning import Callback
 from lightning.pytorch.cli import LightningCLI
 from torchvision.utils import make_grid
 
 from data_loader import FolderDataModule
+from freq_unet import AFDSRUnet  # noqa: F401
+from lightning import Callback
 from models import Discriminator, GANModule, SRResNet  # noqa: F401
 from pytorch_unet import SimpleResNet, SRUnet, UNet  # noqa: F401
 from style_srunet import UnetUpsampler  # noqa: F401
